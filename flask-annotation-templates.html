@@ -1,0 +1,195 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Annotation Tool</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="min-h-screen bg-gray-50">
+    <div class="container mx-auto p-6 max-w-6xl">
+        <div class="flex justify-between mb-4">
+            <h1 class="text-2xl font-bold">Text Annotation Tool</h1>
+            <button 
+                onclick="downloadAnnotations()"
+                class="bg-blue-500 text-white px-4 py-2 rounded flex items-center gap-2"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Download Annotations
+            </button>
+        </div>
+
+        <div id="saveAlert" class="hidden bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+            Annotations auto-saved successfully!
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Text Panel -->
+            <div class="bg-white rounded-lg shadow p-4">
+                <div onmouseup="handleTextSelection()" class="prose">
+                    <h3 class="font-bold mb-4">Text</h3>
+                    <p id="textContent"></p>
+                </div>
+                <div id="selectionContainer" class="hidden mt-4">
+                    <p class="text-sm text-gray-600">Selected text:</p>
+                    <p id="selectedText" class="p-2 bg-gray-100 rounded mt-1"></p>
+                    <button 
+                        onclick="saveAnnotation()"
+                        class="mt-2 bg-blue-500 text-white px-4 py-2 rounded"
+                    >
+                        Save Selection
+                    </button>
+                </div>
+            </div>
+
+            <!-- Question Panel -->
+            <div class="bg-white rounded-lg shadow p-4">
+                <h3 class="font-bold mb-4">Question <span id="questionNumber">1</span></h3>
+                <p id="questionText" class="mb-4"></p>
+                <div id="choices" class="space-y-2"></div>
+                
+                <div class="mt-6 flex justify-between items-center">
+                    <div id="annotationStatus" class="text-sm text-gray-600">
+                        No annotation saved
+                    </div>
+                    <button 
+                        onclick="nextQuestion()"
+                        id="nextButton"
+                        class="bg-blue-500 text-white px-4 py-2 rounded flex items-center gap-2"
+                    >
+                        Next
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentIndex = 0;
+        let questions = [];
+        let annotations = {};
+        let currentSelection = '';
+
+        // Fetch questions and annotations on page load
+        async function initialize() {
+            try {
+                const [questionsResponse, annotationsResponse] = await Promise.all([
+                    fetch('/api/questions'),
+                    fetch('/api/annotations')
+                ]);
+                questions = await questionsResponse.json();
+                annotations = await annotationsResponse.json();
+                displayCurrentQuestion();
+            } catch (error) {
+                console.error('Error initializing:', error);
+            }
+        }
+
+        function displayCurrentQuestion() {
+            const question = questions[currentIndex];
+            document.getElementById('textContent').textContent = question.text;
+            document.getElementById('questionNumber').textContent = currentIndex + 1;
+            document.getElementById('questionText').textContent = question.question;
+            
+            const choicesContainer = document.getElementById('choices');
+            choicesContainer.innerHTML = '';
+            question.choices.forEach((choice, idx) => {
+                const choiceDiv = document.createElement('div');
+                choiceDiv.className = `p-2 rounded ${
+                    idx === question.correctAnswer
+                        ? 'bg-green-100 border border-green-300'
+                        : 'bg-gray-50 border border-gray-200'
+                }`;
+                choiceDiv.textContent = choice;
+                choicesContainer.appendChild(choiceDiv);
+            });
+
+            document.getElementById('nextButton').disabled = currentIndex === questions.length - 1;
+            updateAnnotationStatus();
+        }
+
+        function handleTextSelection() {
+            const selection = window.getSelection().toString().trim();
+            if (selection) {
+                currentSelection = selection;
+                document.getElementById('selectionContainer').classList.remove('hidden');
+                document.getElementById('selectedText').textContent = selection;
+            }
+        }
+
+        async function saveAnnotation() {
+            if (!currentSelection) return;
+
+            const annotation = {
+                questionId: questions[currentIndex].id,
+                selectedText: currentSelection,
+            };
+
+            try {
+                await fetch('/api/annotations', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(annotation),
+                });
+
+                annotations[questions[currentIndex].id] = annotation;
+                showSaveAlert();
+                updateAnnotationStatus();
+                document.getElementById('selectionContainer').classList.add('hidden');
+                currentSelection = '';
+            } catch (error) {
+                console.error('Error saving annotation:', error);
+            }
+        }
+
+        function updateAnnotationStatus() {
+            const status = document.getElementById('annotationStatus');
+            status.textContent = annotations[questions[currentIndex].id] 
+                ? 'Annotation saved ✓' 
+                : 'No annotation saved';
+        }
+
+        function showSaveAlert() {
+            const alert = document.getElementById('saveAlert');
+            alert.classList.remove('hidden');
+            setTimeout(() => alert.classList.add('hidden'), 2000);
+        }
+
+        function nextQuestion() {
+            if (currentIndex < questions.length - 1) {
+                currentIndex++;
+                displayCurrentQuestion();
+                currentSelection = '';
+                document.getElementById('selectionContainer').classList.add('hidden');
+            }
+        }
+
+        async function downloadAnnotations() {
+            const blob = new Blob([JSON.stringify(annotations, null, 2)], {
+                type: 'application/json'
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'annotations.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Initialize the application
+        initialize();
+    </script>
+</body>
+</html>
